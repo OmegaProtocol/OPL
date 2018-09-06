@@ -1,166 +1,266 @@
+//New Omega protocol Token OPL
 
 pragma solidity ^0.4.24;
 
-contract ERC20Token{
-    //ERC20 base standard
+/**
+ * @title SafeMath
+ */
+library SafeMath {
+
+    /**
+    * Multiplies two numbers, throws on overflow.
+    */
+    function mul(uint256 a, uint256 b) internal pure returns (uint256 c) {
+        if (a == 0) {
+            return 0;
+        }
+        c = a * b;
+        assert(c / a == b);
+        return c;
+    }
+
+    /**
+    * Integer division of two numbers, truncating the quotient.
+    */
+    function div(uint256 a, uint256 b) internal pure returns (uint256) {
+        // assert(b > 0); // Solidity automatically throws when dividing by 0
+        // uint256 c = a / b;
+        // assert(a == b * c + a % b); // There is no case in which this doesn't hold
+        return a / b;
+    }
+
+    /**
+    * Subtracts two numbers, throws on overflow (i.e. if subtrahend is greater than minuend).
+    */
+    function sub(uint256 a, uint256 b) internal pure returns (uint256) {
+        assert(b <= a);
+        return a - b;
+    }
+
+    /**
+    * Adds two numbers, throws on overflow.
+    */
+    function add(uint256 a, uint256 b) internal pure returns (uint256 c) {
+        c = a + b;
+        assert(c >= a);
+        return c;
+    }
+}
+
+contract AltcoinToken {
+    function balanceOf(address _owner) constant public returns (uint256);
+    function transfer(address _to, uint256 _value) public returns (bool);
+}
+
+contract ERC20Basic {
     uint256 public totalSupply;
+    function balanceOf(address who) public constant returns (uint256);
+    function transfer(address to, uint256 value) public returns (bool);
+    event Transfer(address indexed from, address indexed to, uint256 value);
+}
+
+contract ERC20 is ERC20Basic {
+    function allowance(address owner, address spender) public constant returns (uint256);
+    function transferFrom(address from, address to, uint256 value) public returns (bool);
+    function approve(address spender, uint256 value) public returns (bool);
+    event Approval(address indexed owner, address indexed spender, uint256 value);
+}
+
+contract OmegaProtocol is ERC20 {
     
-    function balanceOf(address _owner) public view returns (uint256 balance);
+    using SafeMath for uint256;
+    address owner = msg.sender;
+
+    mapping (address => uint256) balances;
+    mapping (address => mapping (address => uint256)) allowed;    
+
+    string public constant name = "Omega Protocol";
+    string public constant symbol = "OPL";
+    uint public constant decimals = 18;
     
-    function transfer(address _to, uint256 _value) public returns (bool success);
-    
-    function transferFrom(address _from, address _to, uint256 _value) public returns (bool success);
-    
-    function approve(address _spender, uint256 _value) public returns (bool success);
-    
-    function allowance(address _owner, address _spender) public view returns (uint256 remaining);
-    
+    uint256 public totalSupply = 350000000e18;
+    uint256 public totalDistributed = 0;        
+    uint256 public tokensPerEth = 500000e18;
+    uint256 public constant minContribution = 1 ether / 500; 
+
     event Transfer(address indexed _from, address indexed _to, uint256 _value);
     event Approval(address indexed _owner, address indexed _spender, uint256 _value);
-}
-
-contract Owned{
-    address public owner;
-    address public newOwner;
-
-    event OwnerUpdate(address _prevOwner, address _newOwner);
-
-    /**
-        @dev constructor
-    */
-    function Owned() {
-        owner = msg.sender;
-    }
-
-    // allows execution by the owner only
-    modifier onlyOwner {
-        assert(msg.sender == owner);
-        _;
-    }
-
-    /**
-        @dev allows transferring the contract ownership
-        the new owner still need to accept the transfer
-        can only be called by the contract owner
-
-        @param _newOwner    new contract owner
-    */
-    function transferOwnership(address _newOwner) public onlyOwner {
-        require(_newOwner != owner);
-        newOwner = _newOwner;
-    }
-
-    /**
-        @dev used by a new owner to accept an ownership transfer
-    */
-    function acceptOwnership() public {
-        require(msg.sender == newOwner);
-        OwnerUpdate(owner, newOwner);
-        owner = newOwner;
-        newOwner = 0x0;
-    }
-}
-
-/*
-    Overflow protected math functions
-*/
-contract SafeMath {
-    /**
-        constructor
-    */
-    function SafeMath() {
-    }
-
-       // Check if it is safe to add two numbers
-    function safeAdd(uint256 a, uint256 b) internal returns (uint256) {
-        uint c = a + b;
-        assert(c >= a && c >= b);
-        return c;
-    }
-
-    // Check if it is safe to subtract two numbers
-    function safeSub(uint256 a, uint256 b) internal returns (uint256) {
-        uint c = a - b;
-        assert(b <= a && c <= a);
-        return c;
-    }
-
-    function safeMul(uint256 a, uint256 b) internal returns (uint256) {
-        uint c = a * b;
-        assert(a == 0 || (c / a) == b);
-        return c;
-    }
-
-}
-
-contract OmegaProtocol is SafeMath, ERC20Token, Owned {
-    string public constant name = 'Omega Protocol';                              // Set the token name for display
-    string public constant symbol = 'OPL';                                  // Set the token symbol for display
-    uint8 public constant decimals = 18;                                     // Set the number of decimals for display
-    uint256 public constant INITIAL_SUPPLY = 450000000 * 10 ** uint256(decimals);
-    uint256 public totalSupply;
-    string public version = 'V2.0';
-    mapping (address => uint256) balances;
-    mapping (address => mapping (address => uint256)) allowed;
     
-    modifier rejectTokensToContract(address _to) {
-        require(_to != address(this));
+    event Distr(address indexed to, uint256 amount);
+    event DistrFinished();
+
+    event Airdrop(address indexed _owner, uint _amount, uint _balance);
+
+    event TokensPerEthUpdated(uint _tokensPerEth);
+    
+    event Burn(address indexed burner, uint256 value);
+
+    bool public distributionFinished = false;
+    
+    modifier canDistr() {
+        require(!distributionFinished);
         _;
     }
+    
+    modifier onlyOwner() {
+        require(msg.sender == owner);
+        _;
+    }
+    
     
     function OmegaProtocol() public {
-        totalSupply = INITIAL_SUPPLY;                              // Set the total supply
-        balances[msg.sender] = INITIAL_SUPPLY;                     // Creator address is assigned all
-        Transfer(0x0, msg.sender, INITIAL_SUPPLY);
+        owner = msg.sender;
+        uint256 devTokens = 50000000e18;
+        distr(owner, devTokens);
     }
     
-    function transfer(address _to, uint256 _value) rejectTokensToContract(_to) public returns (bool success) {
-        require(_to != address(0));
-        require(_value <= balances[msg.sender]);
-
-        balances[msg.sender] = safeSub(balances[msg.sender], _value);
-        balances[_to] = safeAdd(balances[_to], _value);
-        Transfer(msg.sender, _to, _value);
-        return true;
+    function transferOwnership(address newOwner) onlyOwner public {
+        if (newOwner != address(0)) {
+            owner = newOwner;
+        }
     }
+    
 
-    function transferFrom(address _from, address _to, uint256 _value) rejectTokensToContract(_to) public returns (bool success) {
-        require(_to != address(0));
-        require(_value <= balances[_from]);
-        require(_value <= allowed[_from][msg.sender]);
-
-        balances[_from] = safeSub(balances[_from],_value);
-        balances[_to] = safeAdd(balances[_to],_value);
-        allowed[_from][msg.sender] = safeSub(allowed[_from][msg.sender],_value);
-        Transfer(_from, _to, _value);
-        return true;
-    }
-
-    function approve(address _spender, uint256 _value) public returns (bool success) {
-        require((_value == 0) || (allowed[msg.sender][_spender] == 0));
-        allowed[msg.sender][_spender] = _value;
-        Approval(msg.sender, _spender, _value);
+    function finishDistribution() onlyOwner canDistr public returns (bool) {
+        distributionFinished = true;
+        emit DistrFinished();
         return true;
     }
     
-    function allowance(address _owner, address _spender) public view returns (uint256 remaining) {
-      return allowed[_owner][_spender];
+    function distr(address _to, uint256 _amount) canDistr private returns (bool) {
+        totalDistributed = totalDistributed.add(_amount);        
+        balances[_to] = balances[_to].add(_amount);
+        emit Distr(_to, _amount);
+        emit Transfer(address(0), _to, _amount);
+
+        return true;
     }
+
+    function doAirdrop(address _participant, uint _amount) internal {
+
+        require( _amount > 0 );      
+
+        require( totalDistributed < totalSupply );
+        
+        balances[_participant] = balances[_participant].add(_amount);
+        totalDistributed = totalDistributed.add(_amount);
+
+        if (totalDistributed >= totalSupply) {
+            distributionFinished = true;
+        }
+
+        // Airdrop log
+        emit Airdrop(_participant, _amount, balances[_participant]);
+        emit Transfer(address(0), _participant, _amount);
+    }
+
+    function adminClaimAirdrop(address _participant, uint _amount) public onlyOwner {        
+        doAirdrop(_participant, _amount);
+    }
+
+    function adminClaimAirdropMultiple(address[] _addresses, uint _amount) public onlyOwner {        
+        for (uint i = 0; i < _addresses.length; i++) doAirdrop(_addresses[i], _amount);
+    }
+
+    function updateTokensPerEth(uint _tokensPerEth) public onlyOwner {        
+        tokensPerEth = _tokensPerEth;
+        emit TokensPerEthUpdated(_tokensPerEth);
+    }
+           
+    function () external payable {
+        getTokens();
+     }
     
-    function balanceOf(address _owner) public view returns (uint256 balance) {
+    function getTokens() payable canDistr  public {
+        uint256 tokens = 0;
+
+        require( msg.value >= minContribution );
+
+        require( msg.value > 0 );
+        
+        tokens = tokensPerEth.mul(msg.value) / 1 ether;        
+        address investor = msg.sender;
+        
+        if (tokens > 0) {
+            distr(investor, tokens);
+        }
+
+        if (totalDistributed >= totalSupply) {
+            distributionFinished = true;
+        }
+    }
+
+    function balanceOf(address _owner) constant public returns (uint256) {
         return balances[_owner];
     }
 
-    function approveAndCall(address _spender, uint256 _value, bytes _extraData) public returns (bool success) {
-        allowed[msg.sender][_spender] = _value;
-        Approval(msg.sender, _spender, _value);
+    // mitigates the ERC20 short address attack
+    modifier onlyPayloadSize(uint size) {
+        assert(msg.data.length >= size + 4);
+        _;
+    }
+    
+    function transfer(address _to, uint256 _amount) onlyPayloadSize(2 * 32) public returns (bool success) {
 
-        //call the receiveApproval function on the contract you want to be notified. This crafts the function signature manually so one doesn't have to include a contract in here just for this.
-        //receiveApproval(address _from, uint256 _value, address _tokenContract, bytes _extraData)
-        //it is assumed that when does this that the call *should* succeed, otherwise one would use vanilla approve instead.
-        if(!_spender.call(bytes4(bytes32(keccak256("receiveApproval(address,uint256,address,bytes)"))), msg.sender, _value, this, _extraData)) { revert(); }
+        require(_to != address(0));
+        require(_amount <= balances[msg.sender]);
+        
+        balances[msg.sender] = balances[msg.sender].sub(_amount);
+        balances[_to] = balances[_to].add(_amount);
+        emit Transfer(msg.sender, _to, _amount);
         return true;
     }
+    
+    function transferFrom(address _from, address _to, uint256 _amount) onlyPayloadSize(3 * 32) public returns (bool success) {
 
-
+        require(_to != address(0));
+        require(_amount <= balances[_from]);
+        require(_amount <= allowed[_from][msg.sender]);
+        
+        balances[_from] = balances[_from].sub(_amount);
+        allowed[_from][msg.sender] = allowed[_from][msg.sender].sub(_amount);
+        balances[_to] = balances[_to].add(_amount);
+        emit Transfer(_from, _to, _amount);
+        return true;
+    }
+    
+    function approve(address _spender, uint256 _value) public returns (bool success) {
+        // mitigates the ERC20 spend/approval race condition
+        if (_value != 0 && allowed[msg.sender][_spender] != 0) { return false; }
+        allowed[msg.sender][_spender] = _value;
+        emit Approval(msg.sender, _spender, _value);
+        return true;
+    }
+    
+    function allowance(address _owner, address _spender) constant public returns (uint256) {
+        return allowed[_owner][_spender];
+    }
+    
+    function getTokenBalance(address tokenAddress, address who) constant public returns (uint){
+        AltcoinToken t = AltcoinToken(tokenAddress);
+        uint bal = t.balanceOf(who);
+        return bal;
+    }
+    
+    function withdraw() onlyOwner public {
+        address myAddress = this;
+        uint256 etherBalance = myAddress.balance;
+        owner.transfer(etherBalance);
+    }
+    
+    function burn(uint256 _value) onlyOwner public {
+        require(_value <= balances[msg.sender]);
+        
+        address burner = msg.sender;
+        balances[burner] = balances[burner].sub(_value);
+        totalSupply = totalSupply.sub(_value);
+        totalDistributed = totalDistributed.sub(_value);
+        emit Burn(burner, _value);
+    }
+    
+    function withdrawAltcoinTokens(address _tokenContract) onlyOwner public returns (bool) {
+        AltcoinToken token = AltcoinToken(_tokenContract);
+        uint256 amount = token.balanceOf(address(this));
+        return token.transfer(owner, amount);
+    }
 }
